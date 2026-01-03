@@ -287,8 +287,45 @@ class DlnaPlayer(
     override fun isLoading(): Boolean = false
 
     override fun seekTo(mediaItemIndex: Int, positionMs: Long, seekCommand: Int, isRepeatingCurrentItem: Boolean) {
-        Log.d(tag, "seekTo $mediaItemIndex position $positionMs")
-        dlnaManager.seek(positionMs)
+        Log.d(tag, "seekTo mediaItemIndex=$mediaItemIndex, positionMs=$positionMs, currentIndex=$currentMediaItemIndex")
+        
+        if (mediaItemIndex != currentMediaItemIndex) {
+            Log.d(tag, "Cross-chapter seek detected, loading new track at index $mediaItemIndex")
+            
+            val trackInfo = trackProvider?.getTrackInfo(mediaItemIndex)
+            if (trackInfo == null) {
+                Log.e(tag, "Cannot seek to track $mediaItemIndex - no track provider or track info unavailable")
+                return
+            }
+            
+            val oldMediaItem = myCurrentMediaItem
+            currentMediaItemIndex = mediaItemIndex
+            myCurrentMediaItem = currentMediaItems.getOrNull(mediaItemIndex)
+            
+            listeners.queueEvent(EVENT_MEDIA_ITEM_TRANSITION) { listener ->
+                listener.onMediaItemTransition(myCurrentMediaItem, MEDIA_ITEM_TRANSITION_REASON_SEEK)
+            }
+            listeners.flushEvents()
+            
+            setPlayerStateAndNotifyIfChanged(myPlayWhenReady, PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST, STATE_BUFFERING)
+            
+            dlnaManager.play(trackInfo.mediaUrl, trackInfo.metadata) { success ->
+                if (success) {
+                    Log.d(tag, "New track loaded, seeking to position $positionMs")
+                    setPlayerStateAndNotifyIfChanged(true, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_READY)
+                    if (positionMs > 0) {
+                        dlnaManager.seek(positionMs)
+                    }
+                    preloadNextTrack()
+                } else {
+                    Log.e(tag, "Failed to load track at index $mediaItemIndex")
+                    setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_IDLE)
+                }
+            }
+        } else {
+            Log.d(tag, "Same-chapter seek, seeking to position $positionMs")
+            dlnaManager.seek(positionMs)
+        }
     }
 
     override fun getSeekBackIncrement(): Long = 10000L
