@@ -8,15 +8,10 @@
 
     <div class="w-full h-full overflow-hidden absolute top-0 left-0 flex items-center justify-center" @click="show = false">
       <div class="w-full overflow-x-hidden overflow-y-auto bg-primary rounded-lg border border-border" style="max-height: 75%" @click.stop>
-        <div v-if="isScanning" class="p-6 flex flex-col items-center justify-center">
-          <div class="w-8 h-8 border-2 border-fg border-t-transparent rounded-full animate-spin mb-4"></div>
-          <p class="text-fg text-center">{{ $strings.MessageScanningForDevices || 'Scanning for devices...' }}</p>
-        </div>
-
-        <div v-else-if="devices.length === 0" class="p-6 text-center">
+        <div v-if="devices.length === 0" class="p-6 text-center">
           <span class="material-symbols text-4xl text-fg-muted mb-2">speaker_group</span>
           <p class="text-fg-muted">{{ $strings.MessageNoDevicesFound || 'No speakers found' }}</p>
-          <ui-btn class="mt-4" small @click="startScan">{{ $strings.ButtonRescan || 'Scan Again' }}</ui-btn>
+          <ui-btn class="mt-4" small @click="rescan">{{ $strings.ButtonRescan || 'Scan Again' }}</ui-btn>
         </div>
 
         <div v-else>
@@ -40,9 +35,13 @@
             </li>
           </ul>
 
-          <div v-if="connectedDeviceId" class="p-4 border-t border-border">
-            <ui-btn class="w-full" color="error" small @click="disconnect">
+          <div class="p-4 border-t border-border flex gap-2">
+            <ui-btn v-if="connectedDeviceId" class="flex-1" color="error" small @click="disconnect">
               {{ $strings.ButtonDisconnect || 'Disconnect' }}
+            </ui-btn>
+            <ui-btn class="flex-1" small :disabled="isRescanning" @click="rescan">
+              <span v-if="isRescanning" class="material-symbols animate-spin text-sm mr-1">refresh</span>
+              {{ $strings.ButtonRescan || 'Rescan' }}
             </ui-btn>
           </div>
         </div>
@@ -60,8 +59,7 @@ export default {
   },
   data() {
     return {
-      isScanning: false,
-      scanTimeout: null
+      isRescanning: false
     }
   },
   computed: {
@@ -81,20 +79,13 @@ export default {
     }
   },
   methods: {
-    async startScan() {
-      this.isScanning = true
-      await AbsAudioPlayer.startDlnaDiscovery()
-      
-      this.scanTimeout = setTimeout(() => {
-        this.isScanning = false
-      }, 5000)
-    },
-    async stopScan() {
-      if (this.scanTimeout) {
-        clearTimeout(this.scanTimeout)
-        this.scanTimeout = null
-      }
+    async rescan() {
+      this.isRescanning = true
       await AbsAudioPlayer.stopDlnaDiscovery()
+      await AbsAudioPlayer.startDlnaDiscovery()
+      setTimeout(() => {
+        this.isRescanning = false
+      }, 3000)
     },
     async selectDevice(device) {
       if (this.connectedDeviceId === device.id) {
@@ -119,18 +110,6 @@ export default {
       await AbsAudioPlayer.disconnectDlnaDevice()
       this.$store.commit('clearDlnaConnection')
     }
-  },
-  watch: {
-    show(val) {
-      if (val) {
-        this.startScan()
-      } else {
-        this.stopScan()
-      }
-    }
-  },
-  beforeDestroy() {
-    this.stopScan()
   }
 }
 </script>

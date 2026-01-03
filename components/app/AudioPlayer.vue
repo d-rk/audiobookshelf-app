@@ -279,8 +279,7 @@ export default {
       return this.$store.state.isCastAvailable
     },
     showDlnaBtn() {
-      // Always show on Android - discovery happens when modal opens
-      return this.$platform === 'android'
+      return this.$platform === 'android' && this.$store.state.isDlnaAvailable
     },
     isDlnaConnected() {
       return !!this.$store.state.connectedDlnaDevice
@@ -921,6 +920,10 @@ export default {
       AbsAudioPlayer.addListener('onDlnaDevicesUpdate', this.onDlnaDevicesUpdate)
       AbsAudioPlayer.addListener('onDlnaDeviceConnected', this.onDlnaDeviceConnected)
       AbsAudioPlayer.addListener('onDlnaDeviceDisconnected', this.onDlnaDeviceDisconnected)
+
+      if (this.$platform === 'android') {
+        AbsAudioPlayer.startDlnaDiscovery()
+      }
     },
     onDlnaDevicesUpdate(data) {
       console.log('[AudioPlayer] DLNA devices update:', JSON.stringify(data))
