@@ -27,6 +27,8 @@ class DlnaManager(private val context: Context) {
     private val pollingIntervalMs = 1000L
     private var positionPollingRunnable: Runnable? = null
     private var isPolling = false
+    private var lastTransportState: String = "STOPPED"
+    private var wasPlayingBeforeStop = false
 
     private val discoveryListener = object : ControlPoint.DiscoveryListener {
         override fun onDiscover(device: Device) {
@@ -440,14 +442,46 @@ class DlnaManager(private val context: Context) {
     private fun startPositionPolling() {
         if (isPolling) return
         isPolling = true
+        wasPlayingBeforeStop = true
         Log.d(tag, "Starting position polling")
 
         positionPollingRunnable = object : Runnable {
             override fun run() {
                 if (!isPolling) return
+                
+                // Poll position
                 getPositionInfo { positionMs, durationMs ->
                     callback?.onPositionUpdate(positionMs, durationMs)
+                    
+                    // Check if position is near duration (track ended naturally)
+                    if (durationMs > 0 && positionMs > 0) {
+                        val nearEnd = (durationMs - positionMs) < 2000 // Within 2 seconds of end
+                        if (nearEnd) {
+                            Log.d(tag, "Position near end: ${positionMs}ms / ${durationMs}ms")
+                        }
+                    }
                 }
+                
+                // Poll transport state
+                getTransportState { state ->
+                    Log.v(tag, "Transport state: $state (last: $lastTransportState, wasPlaying: $wasPlayingBeforeStop)")
+                    
+                    // Detect transition from PLAYING/TRANSITIONING to STOPPED
+                    if (state == "STOPPED" && wasPlayingBeforeStop && 
+                        (lastTransportState == "PLAYING" || lastTransportState == "TRANSITIONING")) {
+                        Log.d(tag, "Track ended - transitioning from $lastTransportState to STOPPED")
+                        wasPlayingBeforeStop = false
+                        callback?.onTrackEnded()
+                    }
+                    
+                    // Track if we're playing
+                    if (state == "PLAYING" || state == "TRANSITIONING") {
+                        wasPlayingBeforeStop = true
+                    }
+                    
+                    lastTransportState = state
+                }
+                
                 mainHandler.postDelayed(this, pollingIntervalMs)
             }
         }
@@ -456,6 +490,8 @@ class DlnaManager(private val context: Context) {
 
     private fun stopPositionPolling() {
         isPolling = false
+        wasPlayingBeforeStop = false
+        lastTransportState = "STOPPED"
         positionPollingRunnable?.let { mainHandler.removeCallbacks(it) }
         positionPollingRunnable = null
     }

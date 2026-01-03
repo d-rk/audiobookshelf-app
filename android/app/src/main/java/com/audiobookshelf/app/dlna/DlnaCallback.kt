@@ -6,5 +6,6 @@ interface DlnaCallback {
     fun onDeviceDisconnected()
     fun onPlaybackStateChanged(isPlaying: Boolean)
     fun onPositionUpdate(positionMs: Long, durationMs: Long)
+    fun onTrackEnded()
     fun onError(message: String)
 }

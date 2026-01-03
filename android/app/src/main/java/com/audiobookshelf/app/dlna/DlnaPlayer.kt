@@ -37,6 +37,7 @@ class DlnaPlayer(
     private var lastReportedDurationMs = 0L
 
     var sessionAvailabilityListener: DlnaSessionAvailabilityListener? = null
+    var trackProvider: TrackProvider? = null
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -73,6 +74,15 @@ class DlnaPlayer(
         fun onDlnaSessionAvailable()
         fun onDlnaSessionUnavailable()
     }
+
+    interface TrackProvider {
+        fun getTrackInfo(trackIndex: Int): TrackInfo?
+    }
+
+    data class TrackInfo(
+        val mediaUrl: String,
+        val metadata: String?
+    )
 
     init {
         dlnaManager.setCallback(this)
@@ -176,6 +186,43 @@ class DlnaPlayer(
         Log.d(tag, "Position update received: ${positionMs}ms / ${durationMs}ms")
         lastReportedPositionMs = positionMs
         lastReportedDurationMs = durationMs
+    }
+
+    override fun onTrackEnded() {
+        Log.d(tag, "Track ended, current index: $currentMediaItemIndex")
+        
+        if (currentMediaItemIndex + 1 < currentMediaItems.size) {
+            val oldMediaItem = myCurrentMediaItem
+            currentMediaItemIndex++
+            myCurrentMediaItem = currentMediaItems[currentMediaItemIndex]
+            
+            Log.d(tag, "Advancing to track ${currentMediaItemIndex + 1}/${currentMediaItems.size}")
+            
+            listeners.queueEvent(EVENT_MEDIA_ITEM_TRANSITION) { listener ->
+                listener.onMediaItemTransition(myCurrentMediaItem, MEDIA_ITEM_TRANSITION_REASON_AUTO)
+            }
+            listeners.flushEvents()
+            
+            val trackInfo = trackProvider?.getTrackInfo(currentMediaItemIndex)
+            if (trackInfo != null) {
+                Log.d(tag, "Loading next track URL: ${trackInfo.mediaUrl}")
+                dlnaManager.play(trackInfo.mediaUrl, trackInfo.metadata) { success ->
+                    if (success) {
+                        Log.d(tag, "Next track loaded successfully")
+                        setPlayerStateAndNotifyIfChanged(true, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_READY)
+                    } else {
+                        Log.e(tag, "Failed to load next track")
+                        setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_IDLE)
+                    }
+                }
+            } else {
+                Log.e(tag, "No track provider or track info unavailable")
+                setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_ENDED)
+            }
+        } else {
+            Log.d(tag, "Reached end of playlist")
+            setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_ENDED)
+        }
     }
 
     override fun onError(message: String) {

@@ -770,6 +770,44 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
     dlnaManager = manager
     dlnaPlayer = DlnaPlayer(manager)
     dlnaPlayer?.addListener(PlayerListener(this))
+    
+    dlnaPlayer?.trackProvider = object : DlnaPlayer.TrackProvider {
+      override fun getTrackInfo(trackIndex: Int): DlnaPlayer.TrackInfo? {
+        val session = currentPlaybackSession ?: return null
+        val audioTrack = session.audioTracks.getOrNull(trackIndex) ?: return null
+        
+        val mediaUrl = session.getContentUri(audioTrack).toString()
+        val coverUrl = session.getCoverUri(ctx).toString()
+        
+        var mimeType = audioTrack.mimeType
+        if (mimeType.isNullOrEmpty()) {
+          mimeType = when {
+            mediaUrl.endsWith(".mp3", ignoreCase = true) -> "audio/mpeg"
+            mediaUrl.endsWith(".m4a", ignoreCase = true) || mediaUrl.endsWith(".m4b", ignoreCase = true) -> "audio/mp4"
+            mediaUrl.endsWith(".aac", ignoreCase = true) -> "audio/aac"
+            mediaUrl.endsWith(".ogg", ignoreCase = true) -> "audio/ogg"
+            mediaUrl.endsWith(".opus", ignoreCase = true) -> "audio/opus"
+            mediaUrl.endsWith(".flac", ignoreCase = true) -> "audio/flac"
+            mediaUrl.endsWith(".wav", ignoreCase = true) -> "audio/wav"
+            audioTrack.contentUrl.contains(".mp3", ignoreCase = true) -> "audio/mpeg"
+            audioTrack.contentUrl.contains(".m4", ignoreCase = true) -> "audio/mp4"
+            else -> "audio/mpeg"
+          }
+        }
+        
+        val dlnaMetadata = DlnaMetadataBuilder.buildAudioMetadata(
+          title = session.displayTitle ?: "Unknown",
+          artist = session.displayAuthor,
+          album = session.displayTitle,
+          albumArtUrl = coverUrl,
+          mediaUrl = mediaUrl,
+          mimeType = mimeType,
+          durationSeconds = audioTrack.duration.toLong()
+        )
+        
+        return DlnaPlayer.TrackInfo(mediaUrl, dlnaMetadata)
+      }
+    }
 
     Log.d(tag, "switchToDlnaPlayer: Using DLNA Player")
     mediaSessionConnector.setPlayer(dlnaPlayer)
