@@ -27,10 +27,11 @@ class DlnaPlayer(
     private var playbackParameters = PlaybackParameters.DEFAULT
     private var currentPlaybackState = STATE_IDLE
     private var myCurrentMediaItem: MediaItem? = null
-    private var myCurrentTimeline: Timeline = Timeline.EMPTY
+    private var myCurrentTimeline: Timeline = DlnaTimeline.EMPTY
 
     private var currentMediaItems: List<MediaItem> = mutableListOf()
     private var currentMediaItemIndex = 0
+    private var currentTrackDurationsMs: List<Long> = emptyList()
 
     private var lastReportedPositionMs = 0L
     private var lastReportedDurationMs = 0L
@@ -79,6 +80,7 @@ class DlnaPlayer(
 
     fun load(
         mediaItems: List<MediaItem>,
+        trackDurationsMs: List<Long>,
         startIndex: Int,
         startTime: Long,
         playWhenReady: Boolean,
@@ -89,8 +91,10 @@ class DlnaPlayer(
         Log.d(tag, "Load called with ${mediaItems.size} items, startIndex=$startIndex, startTime=$startTime, playWhenReady=$playWhenReady")
 
         currentMediaItems = mediaItems
+        currentTrackDurationsMs = trackDurationsMs
         currentMediaItemIndex = startIndex
         myCurrentMediaItem = if (mediaItems.isNotEmpty()) mediaItems[startIndex] else null
+        myCurrentTimeline = DlnaTimeline(mediaItems, trackDurationsMs)
 
         setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST, STATE_BUFFERING)
 

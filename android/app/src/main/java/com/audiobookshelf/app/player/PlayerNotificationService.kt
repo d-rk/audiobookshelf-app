@@ -861,8 +861,11 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
     Log.d(tag, "prepareDlnaPlayer: Loading DLNA with URL: $mediaUrl")
     Log.d(tag, "prepareDlnaPlayer: Metadata: $dlnaMetadata")
 
+    val trackDurationsMs = playbackSession.audioTracks.map { (it.duration * 1000).toLong() }
+
     dlna.load(
       mediaItems = mediaItems,
+      trackDurationsMs = trackDurationsMs,
       startIndex = currentTrackIndex,
       startTime = currentTrackTime,
       playWhenReady = playWhenReady,
