@@ -6,7 +6,7 @@
       <div class="top-4 left-4 absolute cursor-pointer">
         <span class="material-symbols text-5xl" :class="{ 'text-black text-opacity-75': coverBgIsLight && theme !== 'black' }" @click="collapseFullscreen">keyboard_arrow_down</span>
       </div>
-      <div v-show="showDlnaBtn" class="top-6 right-28 absolute cursor-pointer">
+      <div v-show="showDlnaBtn" class="top-6 absolute cursor-pointer" :class="showCastBtn ? 'right-28' : 'right-16'">
         <span class="material-symbols text-3xl" :class="[coverBgIsLight && theme !== 'black' ? 'text-black' : '', isDlnaConnected ? 'text-success' : '']" @click="dlnaClick">speaker</span>
       </div>
       <div v-show="showCastBtn" class="top-6 right-16 absolute cursor-pointer">

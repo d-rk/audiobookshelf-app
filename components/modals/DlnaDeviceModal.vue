@@ -39,7 +39,7 @@
             <ui-btn v-if="connectedDeviceId" class="flex-1" color="error" small @click="disconnect">
               {{ $strings.ButtonDisconnect || 'Disconnect' }}
             </ui-btn>
-            <ui-btn class="flex-1" small :disabled="isRescanning" @click="rescan">
+            <ui-btn v-if="!connectedDeviceId" class="flex-1" small :disabled="isRescanning" @click="rescan">
               <span v-if="isRescanning" class="material-symbols animate-spin text-sm mr-1">refresh</span>
               {{ $strings.ButtonRescan || 'Rescan' }}
             </ui-btn>
