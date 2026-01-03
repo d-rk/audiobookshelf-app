@@ -6,6 +6,9 @@ import android.util.Log
 import com.audiobookshelf.app.MainActivity
 import com.audiobookshelf.app.data.*
 import com.audiobookshelf.app.device.DeviceManager
+import com.audiobookshelf.app.dlna.DlnaCallback
+import com.audiobookshelf.app.dlna.DlnaDevice
+import com.audiobookshelf.app.dlna.DlnaManager
 import com.audiobookshelf.app.media.MediaEventManager
 import com.audiobookshelf.app.player.CastManager
 import com.audiobookshelf.app.player.PlayerListener
@@ -28,10 +31,12 @@ class AbsAudioPlayer : Plugin() {
   private lateinit var mainActivity: MainActivity
   private lateinit var apiHandler:ApiHandler
   var castManager:CastManager? = null
+  var dlnaManager:DlnaManager? = null
 
   lateinit var playerNotificationService: PlayerNotificationService
 
   private var isCastAvailable:Boolean = false
+  private var isDlnaAvailable:Boolean = false
 
   // Track foreground state to avoid flooding WebView with events while backgrounded
   private var isInForeground: Boolean = true
@@ -44,6 +49,12 @@ class AbsAudioPlayer : Plugin() {
       initCastManager()
     } catch(e:Exception) {
       Log.e(tag, "initCastManager exception ${e.printStackTrace()}")
+    }
+
+    try {
+      initDlnaManager()
+    } catch(e:Exception) {
+      Log.e(tag, "initDlnaManager exception ${e.printStackTrace()}")
     }
 
     val foregroundServiceReady : () -> Unit = {
@@ -452,5 +463,153 @@ class AbsAudioPlayer : Plugin() {
     val jsobj = JSObject()
     jsobj.put("value", isCastAvailable)
     call.resolve(jsobj)
+  }
+
+  private fun initDlnaManager() {
+    dlnaManager = DlnaManager(mainActivity)
+    dlnaManager?.setCallback(object : DlnaCallback {
+      override fun onDevicesUpdated(devices: List<DlnaDevice>) {
+        Log.d(tag, "DLNA devices updated: ${devices.size}")
+        isDlnaAvailable = devices.isNotEmpty()
+        val devicesArray = JSArray()
+        devices.forEach { device ->
+          devicesArray.put(JSObject().apply {
+            put("id", device.id)
+            put("name", device.name)
+            put("manufacturer", device.manufacturer ?: "")
+            put("modelName", device.modelName ?: "")
+            put("address", device.address)
+          })
+        }
+        val ret = JSObject()
+        ret.put("devices", devicesArray)
+        ret.put("available", isDlnaAvailable)
+        notifyListeners("onDlnaDevicesUpdate", ret)
+      }
+
+      override fun onDeviceConnected(device: DlnaDevice) {
+        Log.d(tag, "DLNA device connected: ${device.name}")
+        val ret = JSObject()
+        ret.put("id", device.id)
+        ret.put("name", device.name)
+        ret.put("manufacturer", device.manufacturer ?: "")
+        ret.put("modelName", device.modelName ?: "")
+        ret.put("address", device.address)
+        notifyListeners("onDlnaDeviceConnected", ret)
+      }
+
+      override fun onDeviceDisconnected() {
+        Log.d(tag, "DLNA device disconnected")
+        emit("onDlnaDeviceDisconnected", true)
+      }
+
+      override fun onPlaybackStateChanged(isPlaying: Boolean) {
+        Log.d(tag, "DLNA playback state changed: $isPlaying")
+        emit("onDlnaPlaybackStateChanged", isPlaying)
+      }
+
+      override fun onPositionUpdate(positionMs: Long, durationMs: Long) {
+        val ret = JSObject()
+        ret.put("positionMs", positionMs)
+        ret.put("durationMs", durationMs)
+        notifyListeners("onDlnaPositionUpdate", ret)
+      }
+
+      override fun onError(message: String) {
+        Log.e(tag, "DLNA error: $message")
+        emit("onDlnaError", message)
+      }
+    })
+  }
+
+  @PluginMethod
+  fun startDlnaDiscovery(call: PluginCall) {
+    Log.d(tag, "Starting DLNA discovery")
+    Handler(Looper.getMainLooper()).post {
+      dlnaManager?.startDiscovery()
+      call.resolve()
+    }
+  }
+
+  @PluginMethod
+  fun stopDlnaDiscovery(call: PluginCall) {
+    Log.d(tag, "Stopping DLNA discovery")
+    Handler(Looper.getMainLooper()).post {
+      dlnaManager?.stopDiscovery()
+      call.resolve()
+    }
+  }
+
+  @PluginMethod
+  fun getDlnaDevices(call: PluginCall) {
+    Handler(Looper.getMainLooper()).post {
+      val devices = dlnaManager?.getDevices() ?: emptyList()
+      val devicesArray = JSArray()
+      devices.forEach { device ->
+        devicesArray.put(JSObject().apply {
+          put("id", device.id)
+          put("name", device.name)
+          put("manufacturer", device.manufacturer ?: "")
+          put("modelName", device.modelName ?: "")
+          put("address", device.address)
+        })
+      }
+      val ret = JSObject()
+      ret.put("devices", devicesArray)
+      call.resolve(ret)
+    }
+  }
+
+  @PluginMethod
+  fun connectDlnaDevice(call: PluginCall) {
+    val deviceId = call.getString("deviceId") ?: run {
+      call.reject("Device ID is required")
+      return
+    }
+    Log.d(tag, "Connecting to DLNA device: $deviceId")
+    Handler(Looper.getMainLooper()).post {
+      val success = dlnaManager?.connectToDevice(deviceId) ?: false
+      if (success) {
+        playerNotificationService.switchToDlnaPlayer(dlnaManager!!)
+        call.resolve(JSObject().apply { put("success", true) })
+      } else {
+        call.reject("Failed to connect to device")
+      }
+    }
+  }
+
+  @PluginMethod
+  fun disconnectDlnaDevice(call: PluginCall) {
+    Log.d(tag, "Disconnecting DLNA device")
+    Handler(Looper.getMainLooper()).post {
+      dlnaManager?.disconnect()
+      playerNotificationService.switchToPlayer(false)
+      call.resolve()
+    }
+  }
+
+  @PluginMethod
+  fun getIsDlnaAvailable(call: PluginCall) {
+    val jsobj = JSObject()
+    jsobj.put("value", isDlnaAvailable)
+    call.resolve(jsobj)
+  }
+
+  @PluginMethod
+  fun getDlnaConnectedDevice(call: PluginCall) {
+    Handler(Looper.getMainLooper()).post {
+      val device = dlnaManager?.getConnectedDevice()
+      if (device != null) {
+        val ret = JSObject()
+        ret.put("id", device.id)
+        ret.put("name", device.name)
+        ret.put("manufacturer", device.manufacturer ?: "")
+        ret.put("modelName", device.modelName ?: "")
+        ret.put("address", device.address)
+        call.resolve(ret)
+      } else {
+        call.resolve(JSObject())
+      }
+    }
   }
 }
