@@ -111,15 +111,37 @@ class DlnaPlayer(
         dlnaManager.play(mediaUrl, metadata) { success ->
             if (success) {
                 Log.d(tag, "DLNA play successful, setting playWhenReady=true and state=READY")
-                // Always set to playing after successful play, since DlnaManager.play() starts playback
                 setPlayerStateAndNotifyIfChanged(true, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_READY)
                 if (startTime > 0) {
                     dlnaManager.seek(startTime)
                 }
+                
+                preloadNextTrack()
             } else {
                 Log.e(tag, "DLNA play failed")
                 setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_IDLE)
             }
+        }
+    }
+
+    private fun preloadNextTrack() {
+        if (currentMediaItemIndex + 1 < currentMediaItems.size) {
+            val nextIndex = currentMediaItemIndex + 1
+            val nextTrackInfo = trackProvider?.getTrackInfo(nextIndex)
+            if (nextTrackInfo != null) {
+                Log.d(tag, "Preloading next track (index $nextIndex): ${nextTrackInfo.mediaUrl}")
+                dlnaManager.setNextTrack(nextTrackInfo.mediaUrl, nextTrackInfo.metadata) { success ->
+                    if (success) {
+                        Log.d(tag, "Next track preloaded successfully")
+                    } else {
+                        Log.w(tag, "Failed to preload next track (device may not support SetNextAVTransportURI)")
+                    }
+                }
+            } else {
+                Log.w(tag, "No track provider available for preloading")
+            }
+        } else {
+            Log.d(tag, "No next track to preload (last track)")
         }
     }
 
@@ -192,33 +214,17 @@ class DlnaPlayer(
         Log.d(tag, "Track ended, current index: $currentMediaItemIndex")
         
         if (currentMediaItemIndex + 1 < currentMediaItems.size) {
-            val oldMediaItem = myCurrentMediaItem
             currentMediaItemIndex++
             myCurrentMediaItem = currentMediaItems[currentMediaItemIndex]
             
-            Log.d(tag, "Advancing to track ${currentMediaItemIndex + 1}/${currentMediaItems.size}")
+            Log.d(tag, "Advanced to track ${currentMediaItemIndex + 1}/${currentMediaItems.size}")
             
             listeners.queueEvent(EVENT_MEDIA_ITEM_TRANSITION) { listener ->
                 listener.onMediaItemTransition(myCurrentMediaItem, MEDIA_ITEM_TRANSITION_REASON_AUTO)
             }
             listeners.flushEvents()
             
-            val trackInfo = trackProvider?.getTrackInfo(currentMediaItemIndex)
-            if (trackInfo != null) {
-                Log.d(tag, "Loading next track URL: ${trackInfo.mediaUrl}")
-                dlnaManager.play(trackInfo.mediaUrl, trackInfo.metadata) { success ->
-                    if (success) {
-                        Log.d(tag, "Next track loaded successfully")
-                        setPlayerStateAndNotifyIfChanged(true, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_READY)
-                    } else {
-                        Log.e(tag, "Failed to load next track")
-                        setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_IDLE)
-                    }
-                }
-            } else {
-                Log.e(tag, "No track provider or track info unavailable")
-                setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_ENDED)
-            }
+            preloadNextTrack()
         } else {
             Log.d(tag, "Reached end of playlist")
             setPlayerStateAndNotifyIfChanged(false, PLAY_WHEN_READY_CHANGE_REASON_REMOTE, STATE_ENDED)

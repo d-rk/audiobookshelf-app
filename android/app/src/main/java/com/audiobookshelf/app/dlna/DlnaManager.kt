@@ -27,8 +27,7 @@ class DlnaManager(private val context: Context) {
     private val pollingIntervalMs = 1000L
     private var positionPollingRunnable: Runnable? = null
     private var isPolling = false
-    private var lastTransportState: String = "STOPPED"
-    private var wasPlayingBeforeStop = false
+    private var lastKnownTrackDurationMs = 0L
 
     private val discoveryListener = object : ControlPoint.DiscoveryListener {
         override fun onDiscover(device: Device) {
@@ -317,6 +316,57 @@ class DlnaManager(private val context: Context) {
         }.start()
     }
 
+    fun setNextTrack(mediaUrl: String, metadata: String?, onComplete: ((Boolean) -> Unit)? = null) {
+        val device = connectedDevice
+        if (device == null) {
+            Log.e(tag, "setNextTrack: No device connected")
+            onComplete?.invoke(false)
+            return
+        }
+
+        val avTransport = device.avTransportService
+        if (avTransport == null) {
+            Log.e(tag, "setNextTrack: AVTransport service not available")
+            onComplete?.invoke(false)
+            return
+        }
+
+        Thread {
+            try {
+                val setNextUriAction = avTransport.findAction("SetNextAVTransportURI")
+                if (setNextUriAction == null) {
+                    Log.w(tag, "SetNextAVTransportURI action not supported by device")
+                    mainHandler.post { onComplete?.invoke(false) }
+                    return@Thread
+                }
+
+                val args = mapOf(
+                    "InstanceID" to "0",
+                    "NextURI" to mediaUrl,
+                    "NextURIMetaData" to (metadata ?: "")
+                )
+
+                try {
+                    setNextUriAction.invokeSync(args)
+                    Log.d(tag, "SetNextAVTransportURI success: $mediaUrl")
+                    mainHandler.post { onComplete?.invoke(true) }
+                } catch (e: IOException) {
+                    Log.e(tag, "SetNextAVTransportURI failed", e)
+                    mainHandler.post {
+                        callback?.onError("Failed to set next track: ${e.message}")
+                        onComplete?.invoke(false)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(tag, "Error setting next track", e)
+                mainHandler.post {
+                    callback?.onError("Error: ${e.message}")
+                    onComplete?.invoke(false)
+                }
+            }
+        }.start()
+    }
+
     fun setVolume(volume: Int) {
         val device = connectedDevice ?: return
         val renderingControl = device.renderingControlService ?: return
@@ -442,44 +492,23 @@ class DlnaManager(private val context: Context) {
     private fun startPositionPolling() {
         if (isPolling) return
         isPolling = true
-        wasPlayingBeforeStop = true
+        lastKnownTrackDurationMs = 0L
         Log.d(tag, "Starting position polling")
 
         positionPollingRunnable = object : Runnable {
             override fun run() {
                 if (!isPolling) return
                 
-                // Poll position
                 getPositionInfo { positionMs, durationMs ->
-                    callback?.onPositionUpdate(positionMs, durationMs)
-                    
-                    // Check if position is near duration (track ended naturally)
-                    if (durationMs > 0 && positionMs > 0) {
-                        val nearEnd = (durationMs - positionMs) < 2000 // Within 2 seconds of end
-                        if (nearEnd) {
-                            Log.d(tag, "Position near end: ${positionMs}ms / ${durationMs}ms")
+                    if (durationMs > 0) {
+                        if (lastKnownTrackDurationMs > 0 && durationMs != lastKnownTrackDurationMs) {
+                            Log.d(tag, "Track duration changed: ${lastKnownTrackDurationMs}ms -> ${durationMs}ms, track transition detected")
+                            callback?.onTrackEnded()
                         }
-                    }
-                }
-                
-                // Poll transport state
-                getTransportState { state ->
-                    Log.v(tag, "Transport state: $state (last: $lastTransportState, wasPlaying: $wasPlayingBeforeStop)")
-                    
-                    // Detect transition from PLAYING/TRANSITIONING to STOPPED
-                    if (state == "STOPPED" && wasPlayingBeforeStop && 
-                        (lastTransportState == "PLAYING" || lastTransportState == "TRANSITIONING")) {
-                        Log.d(tag, "Track ended - transitioning from $lastTransportState to STOPPED")
-                        wasPlayingBeforeStop = false
-                        callback?.onTrackEnded()
+                        lastKnownTrackDurationMs = durationMs
                     }
                     
-                    // Track if we're playing
-                    if (state == "PLAYING" || state == "TRANSITIONING") {
-                        wasPlayingBeforeStop = true
-                    }
-                    
-                    lastTransportState = state
+                    callback?.onPositionUpdate(positionMs, durationMs)
                 }
                 
                 mainHandler.postDelayed(this, pollingIntervalMs)
@@ -490,8 +519,7 @@ class DlnaManager(private val context: Context) {
 
     private fun stopPositionPolling() {
         isPolling = false
-        wasPlayingBeforeStop = false
-        lastTransportState = "STOPPED"
+        lastKnownTrackDurationMs = 0L
         positionPollingRunnable?.let { mainHandler.removeCallbacks(it) }
         positionPollingRunnable = null
     }
