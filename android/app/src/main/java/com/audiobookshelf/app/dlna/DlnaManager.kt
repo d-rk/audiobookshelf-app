@@ -490,9 +490,14 @@ class DlnaManager(private val context: Context) {
     }
 
     private fun startPositionPolling() {
-        if (isPolling) return
-        isPolling = true
         lastKnownTrackDurationMs = 0L
+        
+        if (isPolling) {
+            Log.d(tag, "Position polling already running, reset track duration")
+            return
+        }
+        
+        isPolling = true
         Log.d(tag, "Starting position polling")
 
         positionPollingRunnable = object : Runnable {

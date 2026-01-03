@@ -115,7 +115,7 @@ class DlnaPlayer(
                 if (startTime > 0) {
                     dlnaManager.seek(startTime)
                 }
-                
+
                 preloadNextTrack()
             } else {
                 Log.e(tag, "DLNA play failed")
@@ -205,25 +205,24 @@ class DlnaPlayer(
     }
 
     override fun onPositionUpdate(positionMs: Long, durationMs: Long) {
-        Log.d(tag, "Position update received: ${positionMs}ms / ${durationMs}ms")
         lastReportedPositionMs = positionMs
         lastReportedDurationMs = durationMs
     }
 
     override fun onTrackEnded() {
         Log.d(tag, "Track ended, current index: $currentMediaItemIndex")
-        
+
         if (currentMediaItemIndex + 1 < currentMediaItems.size) {
             currentMediaItemIndex++
             myCurrentMediaItem = currentMediaItems[currentMediaItemIndex]
-            
+
             Log.d(tag, "Advanced to track ${currentMediaItemIndex + 1}/${currentMediaItems.size}")
-            
+
             listeners.queueEvent(EVENT_MEDIA_ITEM_TRANSITION) { listener ->
                 listener.onMediaItemTransition(myCurrentMediaItem, MEDIA_ITEM_TRANSITION_REASON_AUTO)
             }
             listeners.flushEvents()
-            
+
             preloadNextTrack()
         } else {
             Log.d(tag, "Reached end of playlist")
@@ -288,27 +287,27 @@ class DlnaPlayer(
 
     override fun seekTo(mediaItemIndex: Int, positionMs: Long, seekCommand: Int, isRepeatingCurrentItem: Boolean) {
         Log.d(tag, "seekTo mediaItemIndex=$mediaItemIndex, positionMs=$positionMs, currentIndex=$currentMediaItemIndex")
-        
+
         if (mediaItemIndex != currentMediaItemIndex) {
             Log.d(tag, "Cross-chapter seek detected, loading new track at index $mediaItemIndex")
-            
+
             val trackInfo = trackProvider?.getTrackInfo(mediaItemIndex)
             if (trackInfo == null) {
                 Log.e(tag, "Cannot seek to track $mediaItemIndex - no track provider or track info unavailable")
                 return
             }
-            
+
             val oldMediaItem = myCurrentMediaItem
             currentMediaItemIndex = mediaItemIndex
             myCurrentMediaItem = currentMediaItems.getOrNull(mediaItemIndex)
-            
+
             listeners.queueEvent(EVENT_MEDIA_ITEM_TRANSITION) { listener ->
                 listener.onMediaItemTransition(myCurrentMediaItem, MEDIA_ITEM_TRANSITION_REASON_SEEK)
             }
             listeners.flushEvents()
-            
+
             setPlayerStateAndNotifyIfChanged(myPlayWhenReady, PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST, STATE_BUFFERING)
-            
+
             dlnaManager.play(trackInfo.mediaUrl, trackInfo.metadata) { success ->
                 if (success) {
                     Log.d(tag, "New track loaded, seeking to position $positionMs")

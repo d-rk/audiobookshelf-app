@@ -549,7 +549,7 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
       currentPlayer.setPlaybackSpeed(playbackRateToUse)
 
       currentPlayer.prepare()
-    } else if (castPlayer != null) {
+    } else if (castPlayer != null && castPlayer == currentPlayer) {
       val currentTrackIndex = playbackSession.getCurrentTrackIndex()
       val currentTrackTime = playbackSession.getCurrentTrackTimeMs()
       val mediaType = playbackSession.mediaType
@@ -563,6 +563,9 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
               playbackRateToUse,
               mediaType
       )
+    } else if (dlnaPlayer != null && dlnaPlayer == currentPlayer) {
+      Log.d(tag, "Loading DLNA player for session ${playbackSession.displayTitle}")
+      prepareDlnaPlayer(playbackSession, playWhenReady, playbackRateToUse)
     }
   }
 
