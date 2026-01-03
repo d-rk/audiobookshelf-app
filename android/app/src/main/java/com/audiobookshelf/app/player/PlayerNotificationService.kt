@@ -809,6 +809,9 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
   private fun prepareDlnaPlayer(playbackSession: PlaybackSession, playWhenReady: Boolean, playbackRate: Float?) {
     val dlna = dlnaPlayer ?: return
 
+    val metadata = playbackSession.getMediaMetadataCompat(ctx)
+    mediaSession.setMetadata(metadata)
+
     val mediaItems = playbackSession.getMediaItems(ctx)
     if (mediaItems.isEmpty()) {
       Log.e(tag, "prepareDlnaPlayer: No media items")
@@ -845,7 +848,7 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
 
     Log.d(tag, "prepareDlnaPlayer: Final MIME type: $mimeType")
 
-    val metadata = DlnaMetadataBuilder.buildAudioMetadata(
+    val dlnaMetadata = DlnaMetadataBuilder.buildAudioMetadata(
       title = playbackSession.displayTitle ?: "Unknown",
       artist = playbackSession.displayAuthor,
       album = playbackSession.displayTitle,
@@ -856,7 +859,7 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
     )
 
     Log.d(tag, "prepareDlnaPlayer: Loading DLNA with URL: $mediaUrl")
-    Log.d(tag, "prepareDlnaPlayer: Metadata: $metadata")
+    Log.d(tag, "prepareDlnaPlayer: Metadata: $dlnaMetadata")
 
     dlna.load(
       mediaItems = mediaItems,
@@ -865,7 +868,7 @@ class PlayerNotificationService : MediaBrowserServiceCompat() {
       playWhenReady = playWhenReady,
       playbackRate = playbackRate ?: 1f,
       mediaUrl = mediaUrl,
-      metadata = metadata
+      metadata = dlnaMetadata,
     )
   }
 
